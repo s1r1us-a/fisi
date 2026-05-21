@@ -47,6 +47,7 @@ const APP_FIELDS = [
   { key: "location",    label: "Standort",               type: "text",     list: "locList" },
   { key: "dateApplied", label: "Datum Bewerbung",        type: "date" },
   { key: "applicationMethod", label: "Wie beworben",     type: "select",   options: ["", "E-Mail", "Online Formular", "anders"] },
+  { key: "emailRecipient", label: "Versendet an (E-Mail-Adresse)", type: "email", full: true, showIf: { field: "applicationMethod", value: "E-Mail" } },
   { key: "followedUp",  label: "Nachgefragt am",         type: "date" },
   { key: "website",     label: "Website / Stellenanzeige", type: "text",   full: true },
   { key: "address",     label: "Adresse",                type: "text",     full: true },
@@ -489,13 +490,23 @@ function openModal(type, id) {
   $("#formFields").innerHTML = fields.map((f) => fieldHtml(f, data)).join("")
     + `<datalist id="locList">${locs.map((l) => `<option value="${esc(l)}">`).join("")}</datalist>`;
 
+  fields.filter((f) => f.showIf).forEach((f) => {
+    const ctrl = $(`#formFields [name="${f.showIf.field}"]`);
+    const wrap = $(`#formFields [data-field="${f.key}"]`);
+    if (!ctrl || !wrap) return;
+    ctrl.addEventListener("change", () => {
+      wrap.classList.toggle("is-hidden", ctrl.value !== f.showIf.value);
+    });
+  });
+
   $("#modalOverlay").hidden = false;
   setTimeout(() => $("#formFields input, #formFields select")?.focus?.(), 50);
 }
 
 function fieldHtml(f, data) {
   const val = data[f.key] != null ? data[f.key] : "";
-  const cls = "field" + (f.full || f.type === "textarea" ? " full" : "");
+  let cls = "field" + (f.full || f.type === "textarea" ? " full" : "");
+  if (f.showIf && data[f.showIf.field] !== f.showIf.value) cls += " is-hidden";
   let input;
   if (f.type === "select") {
     input = `<select name="${f.key}">` + f.options.map((o) =>
@@ -521,6 +532,9 @@ function saveModal(e) {
   const fields = modalCtx.type === "pipeline" ? PIPE_FIELDS : APP_FIELDS;
   const obj = {};
   fields.forEach((f) => { obj[f.key] = (form.elements[f.key].value || "").trim(); });
+  fields.forEach((f) => {
+    if (f.showIf && obj[f.showIf.field] !== f.showIf.value) obj[f.key] = "";
+  });
 
   if (!obj.name) {
     form.querySelector('[data-field="name"]').classList.add("invalid");
