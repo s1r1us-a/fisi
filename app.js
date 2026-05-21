@@ -71,6 +71,7 @@ const ui = {
 };
 let modalCtx = null;   // { type, id|null }
 let confirmCb = null;
+let isOnline = false;
 
 /* --- Helfer --- */
 const $ = (sel) => document.querySelector(sel);
@@ -89,6 +90,23 @@ function daysSince(iso) {
 }
 function toArray(obj) {
   return Object.entries(obj || {}).map(([id, v]) => ({ id, ...v }));
+}
+function normalizeUrl(u) {
+  const s = String(u == null ? "" : u).trim();
+  if (!s) return "";
+  return /^https?:\/\//i.test(s) ? s : "https://" + s;
+}
+/* Löst eine STATUS_META-Farbe (auch CSS-Variablen) zu einem echten Hex-Wert auf. */
+function statusColorHex(status) {
+  const meta = STATUS_META[status];
+  const raw = meta ? meta.color : "var(--st-beworben)";
+  const varMatch = /^var\((--[\w-]+)\)$/.exec(raw);
+  if (varMatch) {
+    const resolved = getComputedStyle(document.documentElement)
+      .getPropertyValue(varMatch[1]).trim();
+    if (resolved) return resolved;
+  }
+  return raw || "#3b82f6";
 }
 
 /* --- Toasts --- */
@@ -118,6 +136,7 @@ function scheduleDashboard() {
 function initFirebase() {
   db.ref(".info/connected").on("value", (snap) => {
     const on = snap.val() === true;
+    isOnline = on;
     const el = $("#connStatus");
     el.classList.toggle("online", on);
     el.classList.toggle("offline", !on);
@@ -309,6 +328,10 @@ function activeCard(a) {
   if (a.dateApplied) info.push(`<span>📅 Beworben am ${esc(fmtDate(a.dateApplied))}</span>`);
   if (a.followedUp) info.push(`<span>🔔 Nachgefragt am ${esc(fmtDate(a.followedUp))}</span>`);
   if (a.contact) info.push(`<span>👤 ${esc(a.contact)}</span>`);
+  if (a.address) info.push(`<span>🏠 ${esc(a.address)}</span>`);
+  if (a.website) info.push(
+    `<a href="${esc(normalizeUrl(a.website))}" target="_blank" rel="noopener" title="${esc(a.website)}">🔗 Stellenanzeige</a>`);
+  if (a.result) info.push(`<span>🏁 ${esc(a.result)}</span>`);
   if (a.notes) info.push(`<span class="row-notes" title="${esc(a.notes)}">📝 ${esc(a.notes)}</span>`);
 
   return `
@@ -316,10 +339,10 @@ function activeCard(a) {
       <div class="row-main">
         <div class="row-head">
           <span class="row-name">${esc(a.name)}</span>
+          ${due ? `<span class="card-flag">⏰ Nachfragen fällig</span>` : ""}
           <button class="status-badge" data-act="status" style="background:${meta.color}">
             ${meta.emoji} ${esc(a.status)}
           </button>
-          ${due ? `<span class="card-flag">⏰ Nachfragen fällig</span>` : ""}
         </div>
         ${info.length ? `<div class="row-meta">${info.join("")}</div>` : ""}
       </div>
@@ -328,6 +351,85 @@ function activeCard(a) {
         <button class="mini-btn danger" data-act="del" title="Löschen">🗑️</button>
       </div>
     </article>`;
+}
+
+/* ===== Export: Bewerbungsbemühungen als Excel-Tabelle ===== */
+function exportActiveXls() {
+  const apps = toArray(applications).sort((a, b) => {
+    const ax = a.dateApplied || "", bx = b.dateApplied || "";
+    if (ax !== bx) return ax < bx ? -1 : 1;
+    return (a.name || "").toLowerCase() < (b.name || "").toLowerCase() ? -1 : 1;
+  });
+  if (!apps.length) {
+    toast("Keine Bewerbungen zum Exportieren vorhanden.", "info");
+    return;
+  }
+
+  const cols = [
+    { label: "Unternehmen",             key: "name",        w: 170 },
+    { label: "Status",                  key: "status",      w: 140 },
+    { label: "Interesse",               key: "interest",    w: 95  },
+    { label: "Standort",                key: "location",    w: 120 },
+    { label: "Adresse",                 key: "address",     w: 210 },
+    { label: "Kontakt",                 key: "contact",     w: 160 },
+    { label: "Website / Stellenanzeige", key: "website",    w: 230 },
+    { label: "Datum Bewerbung",         key: "dateApplied", w: 115, date: true },
+    { label: "Nachgefragt am",          key: "followedUp",  w: 115, date: true },
+    { label: "Ergebnis",                key: "result",      w: 170 },
+    { label: "Notizen",                 key: "notes",       w: 300 }
+  ];
+
+  const cellTxt = (v) => esc(v).replace(/\r?\n/g, '<br style="mso-data-placement:same-cell"/>');
+  const now = new Date();
+  const stamp = `${String(now.getDate()).padStart(2, "0")}.${String(now.getMonth() + 1).padStart(2, "0")}.${now.getFullYear()}`;
+  const fileStamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+  const colGroup = `<colgroup>${cols.map((c) => `<col style="width:${c.w}px"/>`).join("")}</colgroup>`;
+  const titleRow = `<tr><td colspan="${cols.length}" style="padding:11px 10px;background:#1f2138;color:#ffffff;`
+    + `font-size:15px;font-weight:700;border:1px solid #1f2138;">`
+    + `Bewerbungsbem&uuml;hungen &nbsp;&middot;&nbsp; Stand ${stamp} &nbsp;&middot;&nbsp; ${apps.length} Firmen</td></tr>`;
+  const headRow = "<tr>" + cols.map((c) =>
+    `<th style="border:1px solid #5b3fd4;padding:8px 9px;background:#7c5cff;color:#ffffff;`
+    + `font-weight:700;text-align:left;">${esc(c.label)}</th>`).join("") + "</tr>";
+
+  const bodyRows = apps.map((a, i) => {
+    const stripe = i % 2 ? "#f4f5fb" : "#ffffff";
+    const tds = cols.map((c) => {
+      let value = a[c.key] || "";
+      if (c.date) value = fmtDate(value);
+      if (c.key === "status") {
+        return `<td style="border:1px solid #c9cbe0;padding:6px 9px;vertical-align:top;`
+          + `background:${statusColorHex(a.status)};color:#ffffff;font-weight:700;">${cellTxt(value) || "&nbsp;"}</td>`;
+      }
+      const content = c.key === "website" && value
+        ? `<a href="${esc(normalizeUrl(value))}">${cellTxt(value)}</a>`
+        : (cellTxt(value) || "&nbsp;");
+      return `<td style="border:1px solid #c9cbe0;padding:6px 9px;vertical-align:top;background:${stripe};">${content}</td>`;
+    }).join("");
+    return `<tr>${tds}</tr>`;
+  }).join("");
+
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" `
+    + `xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">`
+    + `<head><meta http-equiv="content-type" content="application/vnd.ms-excel; charset=UTF-8"/>`
+    + `<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>`
+    + `<x:Name>Bewerbungsbem&uuml;hungen</x:Name>`
+    + `<x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>`
+    + `</x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head>`
+    + `<body><table border="0" cellspacing="0" cellpadding="0" `
+    + `style="border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:11px;color:#1f2138;">`
+    + `${colGroup}${titleRow}${headRow}${bodyRows}</table></body></html>`;
+
+  const blob = new Blob(["﻿" + html], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `Bewerbungsbemuehungen_${fileStamp}.xls`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  toast(`${apps.length} Bewerbungen exportiert 📊`, "success");
 }
 
 /* ===== Pipeline ===== */
@@ -425,17 +527,25 @@ function saveModal(e) {
     return;
   }
   const ref = modalCtx.type === "pipeline" ? pipeRef : appsRef;
-  if (modalCtx.id) {
-    ref.child(modalCtx.id).update(obj)
-      .then(() => { toast("Änderungen gespeichert.", "success"); closeModal(); })
-      .catch((err) => toast("Fehler: " + err.message, "error"));
+  const isEdit = !!modalCtx.id;
+  let writePromise;
+  if (isEdit) {
+    writePromise = ref.child(modalCtx.id).update(obj);
   } else {
     obj.createdAt = Date.now();
     obj.order = Date.now();
-    ref.push(obj)
-      .then(() => { toast(`„${obj.name}" hinzugefügt.`, "success"); closeModal(); })
-      .catch((err) => toast("Fehler: " + err.message, "error"));
+    writePromise = ref.push(obj);
   }
+
+  /* Modal sofort schließen: Die Realtime DB puffert den Schreibvorgang lokal
+     und synchronisiert ihn später – auch offline geht so nichts verloren. */
+  closeModal();
+  const okMsg = isEdit ? "Änderungen gespeichert." : `„${obj.name}" hinzugefügt.`;
+  toast(
+    isOnline ? okMsg : "Offline gespeichert – wird synchronisiert, sobald du wieder online bist.",
+    isOnline ? "success" : "info"
+  );
+  writePromise.catch((err) => toast("Fehler beim Speichern: " + err.message, "error"));
 }
 
 /* ===== Confirm-Dialog ===== */
@@ -579,6 +689,7 @@ function init() {
     renderActive();
   };
   $("#addActiveBtn").onclick = () => openModal("active");
+  $("#exportActiveBtn").onclick = exportActiveXls;
 
   /* Toolbar: Pipeline */
   $("#pipelineSearch").oninput = (e) => { ui.pipeSearch = e.target.value; renderPipeline(); };
