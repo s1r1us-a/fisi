@@ -46,6 +46,7 @@ const APP_FIELDS = [
   { key: "interest",    label: "Interesse",              type: "select",   options: ["", ...INTERESTS] },
   { key: "location",    label: "Standort",               type: "text",     list: "locList" },
   { key: "dateApplied", label: "Datum Bewerbung",        type: "date" },
+  { key: "applicationMethod", label: "Wie beworben",     type: "select",   options: ["", "E-Mail", "Online Formular", "anders"] },
   { key: "followedUp",  label: "Nachgefragt am",         type: "date" },
   { key: "website",     label: "Website / Stellenanzeige", type: "text",   full: true },
   { key: "address",     label: "Adresse",                type: "text",     full: true },
