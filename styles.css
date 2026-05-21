@@ -379,6 +379,7 @@ input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field.full { grid-column: 1 / -1; }
+.field.is-hidden { display: none; }
 .field label { font-size: 0.79rem; font-weight: 700; color: var(--text-soft); }
 .field label .req { color: var(--st-absage); }
 .field input, .field select, .field textarea {
