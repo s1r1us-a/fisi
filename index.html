@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neles Ultimativer Bewerbungstracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand">
+        <div class="logo">🚀</div>
+        <div class="brand-text">
+          <h1>Neles Ultimativer Bewerbungstracker</h1>
+          <p class="subtitle">FiAE-Praktikum · Köln &amp; Umgebung · Oktober 2026 – April 2027</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span class="conn-status" id="connStatus" title="Verbindungsstatus">
+          <span class="conn-dot"></span><span class="conn-label">verbinde…</span>
+        </span>
+        <button class="icon-btn" id="themeToggle" title="Hell/Dunkel umschalten">🌙</button>
+      </div>
+    </div>
+    <nav class="tabs">
+      <button class="tab is-active" data-tab="dashboard">📊 Dashboard</button>
+      <button class="tab" data-tab="active">📋 Aktive Bewerbungen</button>
+      <button class="tab" data-tab="pipeline">🎯 Pipeline</button>
+    </nav>
+  </header>
+
+  <main class="container">
+    <!-- DASHBOARD -->
+    <section id="tab-dashboard" class="tab-panel is-active">
+      <div class="stats-grid" id="statsGrid"></div>
+
+      <div class="dash-row">
+        <div class="card chart-card">
+          <h2 class="card-title">Status-Verteilung</h2>
+          <div class="donut-wrap">
+            <div class="donut" id="statusDonut">
+              <div class="donut-hole">
+                <span class="donut-total" id="donutTotal">0</span>
+                <span class="donut-sub">Firmen</span>
+              </div>
+            </div>
+            <ul class="legend" id="statusLegend"></ul>
+          </div>
+        </div>
+        <div class="card chart-card">
+          <h2 class="card-title">Verteilung nach Standort</h2>
+          <div class="bars" id="locationBars"></div>
+        </div>
+      </div>
+
+      <div class="dash-row">
+        <div class="card chart-card">
+          <h2 class="card-title">Verteilung nach Interesse</h2>
+          <div class="bars" id="interestBars"></div>
+        </div>
+        <div class="card chart-card">
+          <h2 class="card-title">⏰ Nachfragen fällig</h2>
+          <p class="card-hint">Beworben &amp; seit über 4 Wochen ohne Antwort oder Nachfrage.</p>
+          <ul class="followup-list" id="followupList"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- AKTIVE BEWERBUNGEN -->
+    <section id="tab-active" class="tab-panel">
+      <div class="toolbar">
+        <div class="toolbar-search">
+          <input type="search" id="activeSearch" placeholder="🔍 Firma, Ort, Notiz suchen…" />
+        </div>
+        <select id="activeStatusFilter" class="select">
+          <option value="">Alle Status</option>
+        </select>
+        <select id="activeSort" class="select">
+          <option value="createdAt">Sortieren: Hinzugefügt</option>
+          <option value="name">Sortieren: Name</option>
+          <option value="dateApplied">Sortieren: Datum Bewerbung</option>
+          <option value="status">Sortieren: Status</option>
+          <option value="interest">Sortieren: Interesse</option>
+          <option value="location">Sortieren: Standort</option>
+        </select>
+        <button class="icon-btn sort-dir" id="activeSortDir" title="Reihenfolge umkehren" data-dir="desc">↓</button>
+        <button class="btn btn-primary" id="addActiveBtn">＋ Firma hinzufügen</button>
+      </div>
+      <div class="cards-grid" id="activeGrid"></div>
+      <div class="empty-state" id="activeEmpty" hidden>
+        <span class="empty-emoji">📭</span>
+        <p>Noch keine Bewerbungen. Füge deine erste Firma hinzu!</p>
+      </div>
+    </section>
+
+    <!-- PIPELINE -->
+    <section id="tab-pipeline" class="tab-panel">
+      <div class="toolbar">
+        <div class="toolbar-search">
+          <input type="search" id="pipelineSearch" placeholder="🔍 Firma, Ort, Notiz suchen…" />
+        </div>
+        <select id="pipelineSort" class="select">
+          <option value="createdAt">Sortieren: Hinzugefügt</option>
+          <option value="name">Sortieren: Name</option>
+          <option value="status">Sortieren: Status</option>
+          <option value="deadline">Sortieren: Bewerbung bis</option>
+        </select>
+        <button class="icon-btn sort-dir" id="pipelineSortDir" title="Reihenfolge umkehren" data-dir="desc">↓</button>
+        <button class="btn btn-primary" id="addPipelineBtn">＋ Firma hinzufügen</button>
+      </div>
+      <div class="cards-grid" id="pipelineGrid"></div>
+      <div class="empty-state" id="pipelineEmpty" hidden>
+        <span class="empty-emoji">🎯</span>
+        <p>Pipeline ist leer. Plane hier deine nächsten Bewerbungen.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- STATUS-POPOVER -->
+  <div class="status-popover" id="statusPopover" hidden></div>
+
+  <!-- MODAL -->
+  <div class="modal-overlay" id="modalOverlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2 id="modalTitle">Firma hinzufügen</h2>
+        <button class="icon-btn" id="modalClose" aria-label="Schließen">✕</button>
+      </div>
+      <form id="entryForm" class="modal-form" novalidate>
+        <div class="form-grid" id="formFields"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="modalCancel">Abbrechen</button>
+          <button type="submit" class="btn btn-primary" id="modalSave">Speichern</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- CONFIRM DIALOG -->
+  <div class="modal-overlay" id="confirmOverlay" hidden>
+    <div class="modal modal-sm" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2 id="confirmTitle">Wirklich löschen?</h2>
+      </div>
+      <p class="confirm-text" id="confirmText"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="confirmCancel">Abbrechen</button>
+        <button type="button" class="btn btn-danger" id="confirmOk">Löschen</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+  <script src="seed-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
