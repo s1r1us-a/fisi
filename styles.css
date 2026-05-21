@@ -367,6 +367,7 @@ input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 
   display: grid; place-items: center;
   padding: 20px; animation: fade 0.18s ease;
 }
+.modal-overlay[hidden] { display: none; }
 .modal {
   background: var(--card);
   border-radius: var(--radius);
