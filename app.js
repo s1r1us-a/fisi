@@ -90,7 +90,6 @@ function daysSince(iso) {
 function toArray(obj) {
   return Object.entries(obj || {}).map(([id, v]) => ({ id, ...v }));
 }
-function isUrl(s) { return /^https?:\/\//i.test(s || ""); }
 
 /* --- Toasts --- */
 function toast(msg, kind = "info") {
@@ -106,6 +105,16 @@ function toast(msg, kind = "info") {
 }
 
 /* ===== Firebase: Listener & Seed ===== */
+let dashboardScheduled = false;
+function scheduleDashboard() {
+  if (dashboardScheduled) return;
+  dashboardScheduled = true;
+  requestAnimationFrame(() => {
+    dashboardScheduled = false;
+    renderDashboard();
+  });
+}
+
 function initFirebase() {
   db.ref(".info/connected").on("value", (snap) => {
     const on = snap.val() === true;
@@ -117,21 +126,21 @@ function initFirebase() {
 
   appsRef.on("value", (snap) => {
     applications = snap.val() || {};
-    renderDashboard();
+    scheduleDashboard();
     renderActive();
   }, (err) => toast("DB-Fehler: " + err.message, "error"));
 
   pipeRef.on("value", (snap) => {
     pipeline = snap.val() || {};
-    renderDashboard();
+    scheduleDashboard();
     renderPipeline();
   }, (err) => toast("DB-Fehler: " + err.message, "error"));
 
-  seedRef.once("value").then((snap) => {
-    if (snap.val() === true) return;
+  /* Einmaliger Seed-Import: transaktional gegen Doppelimport bei parallelen Clients. */
+  seedRef.transaction((cur) => (cur === true ? undefined : true)).then((res) => {
+    if (!res.committed) return;
     appsRef.once("value").then((aSnap) => {
-      if (aSnap.exists()) { seedRef.set(true); return; }
-      runSeed(true);
+      if (!aSnap.exists()) runSeed(true);
     });
   });
 }
@@ -226,14 +235,20 @@ function groupCount(arr, key, emptyLabel) {
 }
 function renderBars(sel, pairs) {
   const max = Math.max(1, ...pairs.map((p) => p[1]));
-  $(sel).innerHTML = pairs.length
-    ? pairs.map((p) => `
+  const el = $(sel);
+  if (!pairs.length) {
+    el.innerHTML = `<p class="followup-empty">Noch keine Daten.</p>`;
+    return;
+  }
+  el.innerHTML = pairs.map((p) => `
         <div class="bar-row">
           <span class="bar-label" title="${esc(p[0])}">${esc(p[0])}</span>
-          <span class="bar-track"><span class="bar-fill" style="width:${(p[1] / max) * 100}%"></span></span>
+          <span class="bar-track"><span class="bar-fill" data-w="${(p[1] / max) * 100}" style="width:0"></span></span>
           <span class="bar-val">${p[1]}</span>
-        </div>`).join("")
-    : `<p class="followup-empty">Noch keine Daten.</p>`;
+        </div>`).join("");
+  requestAnimationFrame(() => {
+    el.querySelectorAll(".bar-fill").forEach((f) => { f.style.width = f.dataset.w + "%"; });
+  });
 }
 
 /* ===== Aktive Bewerbungen ===== */
@@ -288,41 +303,31 @@ function renderActive() {
 function activeCard(a) {
   const meta = STATUS_META[a.status] || STATUS_META["Beworben"];
   const due = a.status === "Beworben" && !a.followedUp && daysSince(a.dateApplied) > 28;
-  const rows = [];
-  if (a.dateApplied) rows.push(metaRow("📅", "Beworben am " + fmtDate(a.dateApplied)));
-  if (a.followedUp) rows.push(metaRow("🔔", "Nachgefragt am " + fmtDate(a.followedUp)));
-  if (a.website) {
-    rows.push(isUrl(a.website)
-      ? `<div class="row"><span class="ic">🔗</span><a href="${esc(a.website)}" target="_blank" rel="noopener">${esc(a.website)}</a></div>`
-      : metaRow("🔗", a.website));
-  }
-  if (a.address) rows.push(metaRow("📌", a.address));
-  if (a.contact) rows.push(metaRow("👤", a.contact));
-  if (a.result) rows.push(metaRow("🏁", a.result));
+  const info = [];
+  if (a.location) info.push(`<span class="badge badge-loc">📍 ${esc(a.location)}</span>`);
+  if (a.interest) info.push(`<span class="badge badge-interest">⭐ ${esc(a.interest)}</span>`);
+  if (a.dateApplied) info.push(`<span>📅 Beworben am ${esc(fmtDate(a.dateApplied))}</span>`);
+  if (a.followedUp) info.push(`<span>🔔 Nachgefragt am ${esc(fmtDate(a.followedUp))}</span>`);
+  if (a.contact) info.push(`<span>👤 ${esc(a.contact)}</span>`);
+  if (a.notes) info.push(`<span class="row-notes" title="${esc(a.notes)}">📝 ${esc(a.notes)}</span>`);
 
   return `
-    <article class="app-card" data-id="${a.id}" style="--card-color:${meta.color}">
-      <div class="card-top">
-        <div class="card-name">${esc(a.name)}</div>
-        <div class="card-actions">
-          <button class="mini-btn" data-act="edit" title="Bearbeiten">✏️</button>
-          <button class="mini-btn danger" data-act="del" title="Löschen">🗑️</button>
+    <article class="app-row" data-id="${a.id}" style="--card-color:${meta.color}">
+      <div class="row-main">
+        <div class="row-head">
+          <span class="row-name">${esc(a.name)}</span>
+          <button class="status-badge" data-act="status" style="background:${meta.color}">
+            ${meta.emoji} ${esc(a.status)}
+          </button>
+          ${due ? `<span class="card-flag">⏰ Nachfragen fällig</span>` : ""}
         </div>
+        ${info.length ? `<div class="row-meta">${info.join("")}</div>` : ""}
       </div>
-      <div class="badges">
-        <button class="status-badge" data-act="status" style="background:${meta.color}">
-          ${meta.emoji} ${esc(a.status)}
-        </button>
-        ${a.location ? `<span class="badge badge-loc">📍 ${esc(a.location)}</span>` : ""}
-        ${a.interest ? `<span class="badge badge-interest">⭐ ${esc(a.interest)}</span>` : ""}
+      <div class="row-actions">
+        <button class="mini-btn" data-act="edit" title="Bearbeiten">✏️</button>
+        <button class="mini-btn danger" data-act="del" title="Löschen">🗑️</button>
       </div>
-      ${due ? `<span class="card-flag">⏰ Nachfragen fällig</span>` : ""}
-      ${rows.length ? `<div class="card-meta">${rows.join("")}</div>` : ""}
-      ${a.notes ? `<div class="card-notes">${esc(a.notes)}</div>` : ""}
     </article>`;
-}
-function metaRow(ic, text) {
-  return `<div class="row"><span class="ic">${ic}</span><span>${esc(text)}</span></div>`;
 }
 
 /* ===== Pipeline ===== */
@@ -345,27 +350,27 @@ function renderPipeline() {
 
 function pipeCard(a) {
   const meta = PIPELINE_META[a.status] || PIPELINE_META["Neu"];
-  const rows = [];
-  if (a.deadline) rows.push(metaRow("⏳", "Bewerbung bis " + fmtDate(a.deadline)));
-  if (a.address) rows.push(metaRow("📌", a.address));
+  const info = [];
+  if (a.interest) info.push(`<span class="badge badge-interest">⭐ ${esc(a.interest)}</span>`);
+  if (a.deadline) info.push(`<span>⏳ Bewerbung bis ${esc(fmtDate(a.deadline))}</span>`);
+  if (a.address) info.push(`<span>📌 ${esc(a.address)}</span>`);
+  if (a.notes) info.push(`<span class="row-notes" title="${esc(a.notes)}">📝 ${esc(a.notes)}</span>`);
   return `
-    <article class="app-card" data-id="${a.id}" style="--card-color:${meta.color}">
-      <div class="card-top">
-        <div class="card-name">${esc(a.name)}</div>
-        <div class="card-actions">
-          <button class="mini-btn" data-act="edit" title="Bearbeiten">✏️</button>
-          <button class="mini-btn danger" data-act="del" title="Löschen">🗑️</button>
+    <article class="app-row" data-id="${a.id}" style="--card-color:${meta.color}">
+      <div class="row-main">
+        <div class="row-head">
+          <span class="row-name">${esc(a.name)}</span>
+          <button class="status-badge" data-act="status" style="background:${meta.color}">
+            ${meta.emoji} ${esc(a.status)}
+          </button>
         </div>
+        ${info.length ? `<div class="row-meta">${info.join("")}</div>` : ""}
       </div>
-      <div class="badges">
-        <button class="status-badge" data-act="status" style="background:${meta.color}">
-          ${meta.emoji} ${esc(a.status)}
-        </button>
-        ${a.interest ? `<span class="badge badge-interest">⭐ ${esc(a.interest)}</span>` : ""}
+      <div class="row-actions">
+        <button class="mini-btn" data-act="promote" title="In Aktive Bewerbungen übernehmen">→</button>
+        <button class="mini-btn" data-act="edit" title="Bearbeiten">✏️</button>
+        <button class="mini-btn danger" data-act="del" title="Löschen">🗑️</button>
       </div>
-      ${rows.length ? `<div class="card-meta">${rows.join("")}</div>` : ""}
-      ${a.notes ? `<div class="card-notes">${esc(a.notes)}</div>` : ""}
-      <button class="btn btn-ghost btn-sm card-promote" data-act="promote">→ In Aktive Bewerbungen</button>
     </article>`;
 }
 
@@ -422,22 +427,24 @@ function saveModal(e) {
   const ref = modalCtx.type === "pipeline" ? pipeRef : appsRef;
   if (modalCtx.id) {
     ref.child(modalCtx.id).update(obj)
-      .then(() => toast("Änderungen gespeichert.", "success"))
+      .then(() => { toast("Änderungen gespeichert.", "success"); closeModal(); })
       .catch((err) => toast("Fehler: " + err.message, "error"));
   } else {
     obj.createdAt = Date.now();
     obj.order = Date.now();
     ref.push(obj)
-      .then(() => toast(`„${obj.name}" hinzugefügt.`, "success"))
+      .then(() => { toast(`„${obj.name}" hinzugefügt.`, "success"); closeModal(); })
       .catch((err) => toast("Fehler: " + err.message, "error"));
   }
-  closeModal();
 }
 
 /* ===== Confirm-Dialog ===== */
-function askConfirm(title, text, cb) {
+function askConfirm(title, text, cb, okLabel = "Löschen", okVariant = "danger") {
   $("#confirmTitle").textContent = title;
   $("#confirmText").textContent = text;
+  const ok = $("#confirmOk");
+  ok.textContent = okLabel;
+  ok.className = "btn " + (okVariant === "danger" ? "btn-danger" : "btn-primary");
   confirmCb = cb;
   $("#confirmOverlay").hidden = false;
 }
@@ -460,6 +467,10 @@ function openStatusPopover(badge, type, id, current) {
   let top = r.bottom + window.scrollY + 6;
   if (left + pop.offsetWidth > window.scrollX + document.documentElement.clientWidth - 8) {
     left = window.scrollX + document.documentElement.clientWidth - pop.offsetWidth - 8;
+  }
+  if (r.bottom + pop.offsetHeight + 6 > document.documentElement.clientHeight
+      && r.top - pop.offsetHeight - 6 > 0) {
+    top = r.top + window.scrollY - pop.offsetHeight - 6;
   }
   pop.style.left = left + "px";
   pop.style.top = top + "px";
@@ -492,18 +503,22 @@ function promote(id) {
         contact: "", notes: p.notes || "",
         createdAt: Date.now(), order: Date.now()
       };
-      appsRef.push(newApp)
-        .then(() => pipeRef.child(id).remove())
+      const key = appsRef.push().key;
+      db.ref().update({
+        ["applications/" + key]: newApp,
+        ["pipeline/" + id]: null
+      })
         .then(() => toast(`„${p.name}" ist jetzt aktiv 🚀`, "success"))
         .catch((err) => toast("Fehler: " + err.message, "error"));
-    });
+    },
+    "Übernehmen", "primary");
 }
 
 /* ===== Card-Events (Delegation) ===== */
 function bindGrid(gridSel, type) {
   $(gridSel).addEventListener("click", (e) => {
     const btn = e.target.closest("[data-act]");
-    const card = e.target.closest(".app-card");
+    const card = e.target.closest(".app-row");
     if (!btn || !card) return;
     const id = card.dataset.id;
     const store = type === "pipeline" ? pipeline : applications;
