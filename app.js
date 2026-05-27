@@ -69,7 +69,8 @@ let applications = {};
 let pipeline = {};
 const ui = {
   activeSort: "createdAt", activeDir: "desc", activeSearch: "", activeStatus: "",
-  pipeSort: "createdAt",   pipeDir: "desc",   pipeSearch: ""
+  pipeSort: "createdAt",   pipeDir: "desc",   pipeSearch: "",
+  followupMode: "due"
 };
 let modalCtx = null;   // { type, id|null }
 let confirmCb = null;
@@ -232,18 +233,42 @@ function renderDashboard() {
   renderBars("#locationBars", groupCount(apps, "location", "Ohne Ort"));
   renderBars("#interestBars", groupCount(apps, "interest", "Offen"));
 
-  /* Nachfragen fällig */
-  const due = apps
-    .filter((a) => a.status === "Beworben" && !a.followedUp && daysSince(a.dateApplied) > 28)
-    .sort((a, b) => daysSince(b.dateApplied) - daysSince(a.dateApplied));
-  $("#followupList").innerHTML = due.length
-    ? due.map((a) => `
+  /* Nachfragen — Modus „Fällig“ oder „In Arbeit“ */
+  const hintEl = $("#followupHint");
+  if (ui.followupMode === "working") {
+    const working = apps
+      .filter((a) => a.status === "Nachgefragt")
+      .map((a) => ({ a, ref: a.followedUp || a.dateApplied }))
+      .sort((x, y) => (daysSince(y.ref) ?? -1) - (daysSince(x.ref) ?? -1));
+    if (hintEl) hintEl.textContent = "Nachfrage rausgegangen — Antwort steht noch aus.";
+    $("#followupList").innerHTML = working.length
+      ? working.map(({ a, ref }) => {
+          const d = daysSince(ref);
+          const label = a.followedUp
+            ? (d != null ? `nachgefragt vor ${d} Tagen` : "nachgefragt")
+            : (d != null ? `beworben vor ${d} Tagen` : "");
+          return `
+        <li>
+          <span class="fu-name">${esc(a.name)}</span>
+          <span>${esc(a.location || "")}</span>
+          <span class="fu-days">${esc(label)}</span>
+        </li>`;
+        }).join("")
+      : `<li class="followup-empty">Keine Nachfragen offen. 🌿</li>`;
+  } else {
+    const due = apps
+      .filter((a) => a.status === "Beworben" && !a.followedUp && daysSince(a.dateApplied) > 28)
+      .sort((a, b) => daysSince(b.dateApplied) - daysSince(a.dateApplied));
+    if (hintEl) hintEl.textContent = "Beworben & seit über 4 Wochen ohne Antwort oder Nachfrage.";
+    $("#followupList").innerHTML = due.length
+      ? due.map((a) => `
         <li>
           <span class="fu-name">${esc(a.name)}</span>
           <span>${esc(a.location || "")}</span>
           <span class="fu-days">vor ${daysSince(a.dateApplied)} Tagen</span>
         </li>`).join("")
-    : `<li class="followup-empty">Alles im grünen Bereich – nichts zu tun! 🌿</li>`;
+      : `<li class="followup-empty">Alles im grünen Bereich – nichts zu tun! 🌿</li>`;
+  }
 }
 
 function groupCount(arr, key, emptyLabel) {
@@ -693,6 +718,19 @@ function init() {
     o.value = st; o.textContent = st;
     $("#activeStatusFilter").appendChild(o);
   });
+
+  /* Dashboard: Nachfragen-Toggle */
+  $("#followupMode").onclick = (e) => {
+    const btn = e.target.closest("button[data-mode]");
+    if (!btn) return;
+    const mode = btn.dataset.mode;
+    if (mode === ui.followupMode) return;
+    ui.followupMode = mode;
+    $("#followupMode").querySelectorAll("button").forEach((b) => {
+      b.classList.toggle("is-active", b.dataset.mode === mode);
+    });
+    renderDashboard();
+  };
 
   /* Toolbar: Aktive */
   $("#activeSearch").oninput = (e) => { ui.activeSearch = e.target.value; renderActive(); };

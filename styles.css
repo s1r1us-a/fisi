@@ -140,6 +140,26 @@ body {
 }
 .card-title { font-size: 1rem; font-weight: 700; margin-bottom: 14px; }
 .card-hint { font-size: 0.78rem; color: var(--text-soft); margin: -8px 0 12px; }
+.card-header-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 6px;
+}
+.card-header-row .card-title { margin-bottom: 0; }
+.seg-toggle {
+  display: inline-flex; gap: 2px; padding: 3px;
+  background: var(--bg, rgba(0, 0, 0, 0.05));
+  border: 1px solid var(--border); border-radius: 999px;
+}
+.seg-toggle button {
+  appearance: none; border: 0; background: transparent; cursor: pointer;
+  font: inherit; font-size: 0.74rem; font-weight: 600;
+  color: var(--text-soft); padding: 4px 10px; border-radius: 999px;
+  transition: background 0.15s, color 0.15s;
+}
+.seg-toggle button:hover { color: var(--text); }
+.seg-toggle button.is-active {
+  background: var(--st-nachgefragt); color: #fff;
+}
 
 /* ===== Dashboard: Stat-Karten ===== */
 .stats-grid {
