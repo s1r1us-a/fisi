@@ -147,7 +147,7 @@ body {
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 .fu-toggle:hover { background: rgba(0, 0, 0, 0.06); color: var(--text); }
-.followup-list .fu-progress {
+.followup-list .fu-days.fu-progress {
   color: #fff; background: var(--st-nachgefragt);
   padding: 2px 8px; border-radius: 999px; font-size: 0.72rem;
 }
