@@ -69,12 +69,12 @@ let applications = {};
 let pipeline = {};
 const ui = {
   activeSort: "createdAt", activeDir: "desc", activeSearch: "", activeStatus: "",
-  pipeSort: "createdAt",   pipeDir: "desc",   pipeSearch: "",
-  followupMode: "due"
+  pipeSort: "createdAt",   pipeDir: "desc",   pipeSearch: ""
 };
 let modalCtx = null;   // { type, id|null }
 let confirmCb = null;
 let isOnline = false;
+
 
 /* --- Helfer --- */
 const $ = (sel) => document.querySelector(sel);
@@ -233,42 +233,29 @@ function renderDashboard() {
   renderBars("#locationBars", groupCount(apps, "location", "Ohne Ort"));
   renderBars("#interestBars", groupCount(apps, "interest", "Offen"));
 
-  /* Nachfragen — Modus „Fällig“ oder „In Arbeit“ */
-  const hintEl = $("#followupHint");
-  if (ui.followupMode === "working") {
-    const working = apps
-      .filter((a) => a.status === "Nachgefragt")
-      .map((a) => ({ a, ref: a.followedUp || a.dateApplied }))
-      .sort((x, y) => (daysSince(y.ref) ?? -1) - (daysSince(x.ref) ?? -1));
-    if (hintEl) hintEl.textContent = "Nachfrage rausgegangen — Antwort steht noch aus.";
-    $("#followupList").innerHTML = working.length
-      ? working.map(({ a, ref }) => {
-          const d = daysSince(ref);
-          const label = a.followedUp
-            ? (d != null ? `nachgefragt vor ${d} Tagen` : "nachgefragt")
-            : (d != null ? `beworben vor ${d} Tagen` : "");
-          return `
+  /* Nachfragen fällig */
+  const due = apps
+    .filter((a) => a.status === "Beworben" && !a.followedUp && daysSince(a.dateApplied) > 28)
+    .sort((a, b) => daysSince(b.dateApplied) - daysSince(a.dateApplied));
+  $("#followupList").innerHTML = due.length
+    ? due.map((a) => {
+        const inProgress = !!a.followupInProgress;
+        const daysLabel = inProgress
+          ? `<span class="fu-days fu-progress">In Arbeit</span>`
+          : `<span class="fu-days">vor ${daysSince(a.dateApplied)} Tagen</span>`;
+        const btnLabel = inProgress ? "↺" : "✍️";
+        const btnTitle = inProgress
+          ? "Wieder als fällig anzeigen"
+          : "Als „In Arbeit“ markieren";
+        return `
         <li>
           <span class="fu-name">${esc(a.name)}</span>
           <span>${esc(a.location || "")}</span>
-          <span class="fu-days">${esc(label)}</span>
+          ${daysLabel}
+          <button class="fu-toggle" data-id="${esc(a.id)}" title="${btnTitle}" aria-label="${btnTitle}">${btnLabel}</button>
         </li>`;
-        }).join("")
-      : `<li class="followup-empty">Keine Nachfragen offen. 🌿</li>`;
-  } else {
-    const due = apps
-      .filter((a) => a.status === "Beworben" && !a.followedUp && daysSince(a.dateApplied) > 28)
-      .sort((a, b) => daysSince(b.dateApplied) - daysSince(a.dateApplied));
-    if (hintEl) hintEl.textContent = "Beworben & seit über 4 Wochen ohne Antwort oder Nachfrage.";
-    $("#followupList").innerHTML = due.length
-      ? due.map((a) => `
-        <li>
-          <span class="fu-name">${esc(a.name)}</span>
-          <span>${esc(a.location || "")}</span>
-          <span class="fu-days">vor ${daysSince(a.dateApplied)} Tagen</span>
-        </li>`).join("")
-      : `<li class="followup-empty">Alles im grünen Bereich – nichts zu tun! 🌿</li>`;
-  }
+      }).join("")
+    : `<li class="followup-empty">Alles im grünen Bereich – nichts zu tun! 🌿</li>`;
 }
 
 function groupCount(arr, key, emptyLabel) {
@@ -719,17 +706,14 @@ function init() {
     $("#activeStatusFilter").appendChild(o);
   });
 
-  /* Dashboard: Nachfragen-Toggle */
-  $("#followupMode").onclick = (e) => {
-    const btn = e.target.closest("button[data-mode]");
+  /* Dashboard: pro Eintrag „In Arbeit“ togglen (in Firebase persistiert) */
+  $("#followupList").onclick = (e) => {
+    const btn = e.target.closest(".fu-toggle");
     if (!btn) return;
-    const mode = btn.dataset.mode;
-    if (mode === ui.followupMode) return;
-    ui.followupMode = mode;
-    $("#followupMode").querySelectorAll("button").forEach((b) => {
-      b.classList.toggle("is-active", b.dataset.mode === mode);
-    });
-    renderDashboard();
+    const id = btn.dataset.id;
+    const current = !!(applications[id] && applications[id].followupInProgress);
+    appsRef.child(id).update({ followupInProgress: !current })
+      .catch((err) => toast("Konnte nicht speichern: " + err.message, "error"));
   };
 
   /* Toolbar: Aktive */
